@@ -1,0 +1,72 @@
+import os
+import requests
+from flask import Flask, render_template, request
+
+
+app = Flask(__name__)
+API_KEY = os.environ.get("WEATHER_API_KEY",)
+
+@app.route("/", methods=["GET", "POST"])
+def home():
+    error = None
+    forecast_data = None
+    location_value = ""
+
+    if request.method == "POST":
+        location_value = request.form.get("location", "").strip()
+
+        if location_value == "":
+            error = "Please enter a ZIP code or city, state."
+        elif not API_KEY:
+            error = "Weather API key is missing."
+        else:
+            url = "https://api.weatherapi.com/v1/forecast.json"
+            params = {
+                "key": API_KEY,
+                "q": location_value,
+                "days": 7
+            }
+
+            try:
+                response = requests.get(url, params=params, timeout=10)
+
+                if response.status_code != 200:
+                    error = f"API request failed. Status code: {response.status_code}"
+                else:
+                    data = response.json()
+
+                    city_name = data["location"]["name"]
+                    region = data["location"]["region"]
+                    country = data["location"]["country"]
+                    forecast_days = data["forecast"]["forecastday"]
+
+                    forecast_list = []
+                    for day in forecast_days:
+                        forecast_list.append({
+                            "date": day["date"],
+                            "high": day["day"]["maxtemp_f"],
+                            "low": day["day"]["mintemp_f"],
+                            "condition": day["day"]["condition"]["text"]
+                        })
+
+                    forecast_data = {
+                        "title": f"7-Day Forecast for {city_name}, {region}, {country}",
+                        "days": forecast_list
+                    }
+
+            except requests.exceptions.RequestException as e:
+                error = f"Network problem: {e}"
+            except KeyError:
+                error = "The API response format was not what the code expected."
+            except ValueError:
+                error = "The API did not return valid JSON."
+
+    return render_template(
+        "index.html",
+        error=error,
+        forecast_data=forecast_data,
+        location_value=location_value
+    )
+
+if __name__ == "__main__":
+    app.run(debug=True)
