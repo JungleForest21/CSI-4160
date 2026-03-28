@@ -1,0 +1,58 @@
+h1 {
+    margin-bottom: 10px;
+}
+
+form {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+input[type="text"] {
+    width: 70%;
+    max-width: 350px;
+    padding: 12px;
+    font-size: 16px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+}
+
+button {
+    padding: 12px 18px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background-color: #2d7ff9;
+    color: white;
+    margin-left: 8px;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+.error-box {
+    margin-top: 20px;
+    padding: 12px;
+    background: #ffdede;
+    color: #a10000;
+    border-radius: 8px;
+}
+
+.forecast-box {
+    margin-top: 25px;
+    text-align: left;
+}
+
+.forecast-box h2 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.forecast-card {
+    background: #f4f9ff;
+    border-left: 5px solid #2d7ff9;
+    padding: 15px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+}
