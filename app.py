@@ -1,147 +1,176 @@
-import tkinter as tk
-from tkinter import messagebox
-import requests
-import threading
-from fastapi import FastAPI, HTTPException
-import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
-API_KEY = "541e5a0ca12546ae99205719261203"
+import requests
+import anthropic
+from dataclasses import dataclass, asdict
 
 app = FastAPI()
 
-# ---------- FASTAPI BACKEND ----------
-
-@app.get("/weather/{location}")
-def get_weather(location: str):
-
-    url = "http://api.weatherapi.com/v1/forecast.json"
-
-    params = {
-        "key": API_KEY,
-        "q": location,
-        "days": 7
-    }
-
-    response = requests.get(url, params=params)
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=400, detail="Weather API request failed")
-
-    data = response.json()
-
-    result = {
-        "city": data["location"]["name"],
-        "region": data["location"]["region"],
-        "country": data["location"]["country"],
-        "forecast": []
-    }
-
-    for day in data["forecast"]["forecastday"]:
-        result["forecast"].append({
-            "date": day["date"],
-            "max_temp": day["day"]["maxtemp_f"],
-            "min_temp": day["day"]["mintemp_f"],
-            "condition": day["day"]["condition"]["text"]
-        })
-
-    return result
+#  API KEYS
+OPENWEATHER_API_KEY = ""
+CLAUDE_API_KEY = ""
 
 
-# ---------- TKINTER FRONTEND ----------
+claude_client = anthropic.Anthropic(
+    api_key=CLAUDE_API_KEY
+)
 
-API_URL = "http://127.0.0.1:8000/weather"
 
-def get_weather_gui():
+templates = Jinja2Templates(directory="templates")
 
-    location = location_entry.get().strip()
+# ---------- Data Structures ----------
 
-    if location == "":
-        messagebox.showerror("Error", "Please enter a ZIP code or city, state.")
-        return
+@dataclass
+class NormalizedLocation:
+    name: str
+    latitude: float
+    longitude: float
 
+@dataclass
+class CurrentConditions:
+    temperature: float
+    condition: str
+
+@dataclass
+class WeatherResponse:
+    location: NormalizedLocation
+    current: CurrentConditions
+    ai_summary: str
+
+
+# ---------- FRONTEND ROUTE ----------
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+# ---------- API ENDPOINT ----------
+
+@app.get("/api/zip-cities")
+def get_cities_by_zip(zip_code: str):
     try:
+        
+        weather_url = "https://api.openweathermap.org/data/2.5/weather"
+        weather = requests.get(weather_url, params={
+            "zip": f"{zip_code},US",
+            "appid": OPENWEATHER_API_KEY
+        }).json()
 
-        response = requests.get(f"{API_URL}/{location}")
+        if "coord" not in weather:
+            raise HTTPException(status_code=404, detail="Invalid ZIP code")
 
-        if response.status_code != 200:
-            messagebox.showerror("Error", "API request failed")
-            return
+        lat = weather["coord"]["lat"]
+        lon = weather["coord"]["lon"]
 
-        data = response.json()
+        
+        geo_url = "http://api.openweathermap.org/geo/1.0/reverse"
+        geo_resp = requests.get(geo_url, params={
+            "lat": lat,
+            "lon": lon,
+            "limit": 5,
+            "appid": OPENWEATHER_API_KEY
+        }).json()
 
-        city = data["city"]
-        region = data["region"]
-        country = data["country"]
+        cities = list(set([place["name"] for place in geo_resp]))
 
-        forecast_text = ""
-
-        for day in data["forecast"]:
-
-            forecast_text += (
-                f"{day['date']} | "
-                f"High: {day['max_temp']}°F | "
-                f"Low: {day['min_temp']}°F | "
-                f"{day['condition']}\n"
-            )
-
-        forecast_title.config(text=f"7-Day Forecast for {city}, {region}, {country}")
-        forecast_label.config(text=forecast_text)
-
-        page1.pack_forget()
-        page2.pack(fill="both", expand=True)
+        return {"cities": cities}
 
     except Exception as e:
-        messagebox.showerror("Error", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-def go_back():
-    page2.pack_forget()
-    page1.pack(fill="both", expand=True)
+@app.get("/check")
+def check():
+    return {"status": "ok"}
 
+@app.post("/api/ask")
+def ask_ai(data: dict):
+    try:
+        question = data.get("question")
+        context = data.get("context")
 
-# ---------- START FASTAPI SERVER ----------
+        if not question:
+            raise HTTPException(status_code=400, detail="No question provided")
 
-def start_api():
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+        prompt = f"""
+        Weather context:
+        {context}
 
+        User question:
+        {question}
 
-api_thread = threading.Thread(target=start_api, daemon=True)
-api_thread.start()
+        Answer clearly and briefly.
+        """
 
+        claude_response = claude_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=150,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
 
-# ---------- TKINTER UI ----------
+        return {"answer": claude_response.content[0].text}
 
-root = tk.Tk()
-root.title("Weather App")
-root.geometry("700x400")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-root.config(bg="#87CEEB")
+@app.get("/api/weather")
+def get_weather(query: str, units: str = "imperial"):
+    try:
+        
+        geo_url = "http://api.openweathermap.org/geo/1.0/direct"
+        geo_resp = requests.get(geo_url, params={
+            "q": query,
+            "limit": 1,
+            "appid": OPENWEATHER_API_KEY
+        }).json()
 
-page1 = tk.Frame(root, bg="#87CEEB")
+        if not geo_resp:
+            raise HTTPException(status_code=404, detail="Location not found")
 
-title_label = tk.Label(page1, text="Weather App", font=("Arial", 20, "bold"))
-title_label.pack(pady=20)
+        lat = geo_resp[0]["lat"]
+        lon = geo_resp[0]["lon"]
+        name = geo_resp[0]["name"]
 
-instruction_label = tk.Label(page1, text="Enter ZIP code or City, State")
-instruction_label.pack(pady=5)
+        
+        weather_url = "https://api.openweathermap.org/data/2.5/weather"
+        weather = requests.get(weather_url, params={
+            "lat": lat,
+            "lon": lon,
+            "units": units,
+            "appid": OPENWEATHER_API_KEY
+        }).json()
 
-location_entry = tk.Entry(page1, width=30, font=("Arial", 12))
-location_entry.pack(pady=10)
+        temperature = weather["main"]["temp"]
+        condition = weather["weather"][0]["description"]
 
-go_button = tk.Button(page1, text="Go", width=12, command=get_weather_gui)
-go_button.pack(pady=10)
+        
+        prompt = f"""
+        The current weather in {name} is {temperature} degrees with {condition}.
+        Give a short, friendly summary and advice for someone going outside.
+        """
 
-page1.pack(fill="both", expand=True)
+        claude_response = claude_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=150,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
 
-page2 = tk.Frame(root, bg="#87CEEB")
+        ai_summary = claude_response.content[0].text
 
-forecast_title = tk.Label(page2, text="", font=("Arial", 16, "bold"))
-forecast_title.pack(pady=20)
+        response = WeatherResponse(
+            location=NormalizedLocation(name, lat, lon),
+            current=CurrentConditions(temperature, condition),
+            ai_summary=ai_summary
+        )
 
-forecast_label = tk.Label(page2, text="", font=("Arial", 11), justify="left")
-forecast_label.pack(pady=10)
+        return asdict(response)
 
-back_button = tk.Button(page2, text="Back", width=12, command=go_back)
-back_button.pack(pady=20)
-
-root.mainloop()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

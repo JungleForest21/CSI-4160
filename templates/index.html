@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Weather Alert</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            height: 100vh;
+            background:
+                linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
+                url('https://images.unsplash.com/photo-1501785888041-af3ef285b470');
+            background-size: cover;
+            background-position: center;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 420px;
+            padding: 30px;
+            border-radius: 20px;
+
+            background: rgba(255,255,255,0.08);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.15);
+
+            color: white;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            background: rgba(255,255,255,0.08);
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.12);
+            margin-bottom: 10px;
+        }
+
+        input, select {
+            width: 100%;
+            border: none;
+            outline: none;
+            background: transparent;
+            color: white;
+            font-size: 15px;
+        }
+
+        input::placeholder {
+            color: rgba(255,255,255,0.6);
+        }
+
+        button {
+            width: 100%;
+            margin-top: 10px;
+            padding: 12px;
+
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+
+            background: rgba(255,255,255,0.08);
+            color: white;
+
+            cursor: pointer;
+            transition: 0.25s;
+        }
+
+        button:hover {
+            background: rgba(255,255,255,0.18);
+        }
+
+        .card {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 14px;
+
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+
+            text-align: left;
+        }
+
+        .section {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.15);
+        }
+
+        .error { color: #ffb3b3; }
+        .loading { opacity: 0.8; }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <h1>Weather Alert</h1>
+
+    <div class="input-group">
+        <input id="city" placeholder="Enter city (Detroit, MI)">
+    </div>
+    <button onclick="getWeather()">Get Weather</button>
+
+    <div class="section">
+        <div class="input-group">
+            <input id="zip" placeholder="Enter ZIP (e.g., 48044)">
+        </div>
+        <button onclick="getCities()">Find Cities</button>
+
+        <div class="input-group" id="dropdownGroup" style="display:none;">
+            <select id="cityDropdown"></select>
+        </div>
+
+        <button id="useCityBtn" style="display:none;" onclick="useSelectedCity()">
+            Use Selected City
+        </button>
+    </div>
+
+    
+    <div id="weather"></div>
+ 
+    <div id="askSection" style="display:none;" class="section">
+        <div class="input-group">
+            <input id="question" placeholder="Ask AI about the weather...">
+        </div>
+        <button onclick="askAI()">Ask AI</button>
+        <div id="answer"></div>
+    </div>
+</div>
+
+<script>
+let weatherContext = "";
+
+async function getWeather() {
+    const city = document.getElementById("city").value.trim();
+    const weatherDiv = document.getElementById("weather");
+
+    if (!city) {
+        weatherDiv.innerHTML = `<p class="error">Enter a city</p>`;
+        return;
+    }
+
+    weatherDiv.innerHTML = `<p class="loading">Loading...</p>`;
+
+    try {
+        const res = await fetch(`/api/weather?query=${encodeURIComponent(city)}`);
+        const data = await res.json();
+
+        if (data.detail) {
+            weatherDiv.innerHTML = `<p class="error">${data.detail}</p>`;
+            return;
+        }
+
+        weatherContext = `
+        Location: ${data.location.name}
+        Latitude: ${data.location.latitude}
+        Longitude: ${data.location.longitude}
+        Temperature: ${data.current.temperature}
+        Condition: ${data.current.condition}
+        `;
+
+        weatherDiv.innerHTML = `
+            <div class="card">
+                <h3>${data.location.name}</h3>
+                <p>${data.location.latitude}, ${data.location.longitude}</p>
+                <p>${data.current.temperature}</p>
+                <p>${data.current.condition}</p>
+                <p><strong>AI Insight:</strong></p>
+                <p>${data.ai_summary}</p>
+            </div>
+        `;
+
+        document.getElementById("askSection").style.display = "block";
+
+    } catch (err) {
+        weatherDiv.innerHTML = `<p class="error">Error loading data</p>`;
+    }
+}
+
+async function getCities() {
+    const zip = document.getElementById("zip").value.trim();
+    const dropdown = document.getElementById("cityDropdown");
+
+    if (!zip) {
+        alert("Enter ZIP code");
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/zip-cities?zip_code=${zip}`);
+        const data = await res.json();
+
+        if (data.detail) {
+            alert(data.detail);
+            return;
+        }
+
+        dropdown.innerHTML = "";
+
+        data.cities.forEach(city => {
+            const option = document.createElement("option");
+            option.value = city;
+            option.textContent = city;
+            dropdown.appendChild(option);
+        });
+
+        document.getElementById("dropdownGroup").style.display = "block";
+        document.getElementById("useCityBtn").style.display = "block";
+
+    } catch (err) {
+        alert("Error fetching cities");
+    }
+}
+
+function useSelectedCity() {
+    const selected = document.getElementById("cityDropdown").value;
+    document.getElementById("city").value = selected;
+}
+
+async function askAI() {
+    const question = document.getElementById("question").value;
+    const answerDiv = document.getElementById("answer");
+
+    if (!question) {
+        answerDiv.innerHTML = `<p class="error">Ask something</p>`;
+        return;
+    }
+
+    answerDiv.innerHTML = `<p class="loading">Thinking...</p>`;
+
+    try {
+        const res = await fetch("/api/ask", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                question: question,
+                context: weatherContext
+            })
+        });
+
+        const data = await res.json();
+
+        answerDiv.innerHTML = `
+            <div class="card">
+                <p><strong>Answer:</strong></p>
+                <p>${data.answer}</p>
+            </div>
+        `;
+
+    } catch (err) {
+        answerDiv.innerHTML = `<p class="error">Error getting answer</p>`;
+    }
+}
+</script>
+
+</body>
+</html>
