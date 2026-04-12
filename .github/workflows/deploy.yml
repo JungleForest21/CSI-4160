@@ -42,15 +42,20 @@ jobs:
         run: |
           cat > ansible/inventory.ini <<EOF
           [weather]
-          ${EC2_HOST} ansible_user=${EC2_USER} ansible_ssh_private_key_file=~/.ssh/deploy_key
+          ${EC2_HOST} ansible_user=${EC2_USER} ansible_ssh_private_key_file=$HOME/.ssh/deploy_key
           EOF
 
       - name: Install SSH key
+        shell: bash
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${EC2_HOST}" >> ~/.ssh/known_hosts
+          set -euxo pipefail
+          mkdir -p "$HOME/.ssh"
+          cat <<'EOF' > "$HOME/.ssh/deploy_key"
+          ${{ secrets.EC2_SSH_KEY }}
+          EOF
+          chmod 600 "$HOME/.ssh/deploy_key"
+          ssh-keygen -y -f "$HOME/.ssh/deploy_key" >/dev/null
+          ssh-keyscan -H "${EC2_HOST}" >> "$HOME/.ssh/known_hosts"
 
       - name: Backend sanity check
         run: |
