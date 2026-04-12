@@ -1,1 +1,3 @@
-
+.github/deploy.yml
+.github/files/weather.service
+templates/nginx-weather.conf.j2
